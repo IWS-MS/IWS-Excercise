@@ -15,7 +15,92 @@ const paymentURL= "http://localhost:" + config.Nodes.paymentPORT;
 router.post('/checkout/:customerId', async function(req, res, next){
     res.setHeader("Content-Type", "application/json");
 
-    //TODO
+    //Set request options for basketservice
+    const basketOptions = {
+        method: 'GET',
+        uri: basketURL + "/" + req.params.customerId
+    };
+
+    //Get basket by customerId
+    var customerBasket = await requestPromise(basketOptions)
+        .then(function (response) {
+            return JSON.parse(response);
+        });
+
+    //field for calculating fullprice
+    var fullPrice = 0;
+
+    //Iterate over all items in basket
+    for (var i = 0; i < customerBasket.items.length; i++) {
+        var item = customerBasket.items[i];
+
+        //Set request options for productservice
+        const productOptions = {
+            method: 'GET',
+            uri: productURL + "/" + item.productId
+        };
+
+        //Get product by id
+        var product = await requestPromise(productOptions)
+            .then(function (response) {
+                return JSON.parse(response);
+            });
+
+        //Set request options for marketingservice
+        const marketingOptions = {
+            method: 'GET',
+            uri: marketingURL + "/" + product.productId
+        };
+
+        //get the highest discount
+        var discount = 0;
+
+        //Get marketingcampaigns by productid
+        await requestPromise(marketingOptions)
+            .then(function (response){
+                //parse response to json
+                var campaigns = JSON.parse(response);
+
+                 //iterate over all campaigns
+                for (var j = 0; j < campaigns.length; j++) {
+                    //check if discount of response is higher then current saved discount
+                    if(discount < Number(campaigns[j].productDiscount)){
+                        discount = Number(campaigns[j].productDiscount);
+                    }
+                }
+            });
+
+        //Add value to fullPrice
+        var calc = ((product.productPrice - discount) * item.count);
+        fullPrice += calc;
+    }
+
+    //remove unneccessary field customerBasketId
+    for (var j = 0; j < customerBasket.items.length; j++) {
+        delete customerBasket.items[j].customerBasketId;
+    }
+
+    //Set request options for paymentservice
+    const paymentOptions = {
+        method: 'POST',
+        uri: paymentURL + "/",
+        headers: {
+            'Content-Type': 'application/json; charset=utf-8'
+        },
+        json: true,
+        body: {
+            items : customerBasket.items,
+            billNumber : Math.floor(Math.random() * Math.floor(9999999)),
+            customerId : parseInt(req.params.customerId),
+            price : fullPrice
+        }
+    };
+
+    //Send request
+    await requestPromise.post(paymentOptions)
+        .then(function (response) {
+            return response;
+        });
 
     //Return success message
     res.send("Created payment");
